@@ -107,6 +107,37 @@ class Indexar extends EventEmitter {
       console.error("Error adding contract:", error);
     }
   }
+
+  async start() {
+    if (this.isRunning) {
+      console.log("Indexar is already running");
+      return;
+    }
+
+    this.isRunning = true;
+    console.log("Indexar starting...");
+
+    try {
+      const currentBlock = await this.provider.getBlockNumber();
+      console.log(`Current block: ${currentBlock}`);
+      console.log(`last processed block: ${this.lastProcessedBlock}`);
+
+      if (this.lastProcessedBlock < currentBlock) {
+        // process blocks
+      }
+
+      this.provider.on("block", async (blockNumber) => {
+        if (this.isRunning) {
+          //process block
+        }
+      });
+
+      this.emit("started");
+    } catch (error) {
+      console.error("Error starting Indexar:", error);
+      this.isRunning = false;
+    }
+  }
 }
 
 export default Indexar;
