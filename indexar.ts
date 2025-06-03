@@ -409,6 +409,75 @@ class Indexar extends EventEmitter {
       });
     });
   }
+
+  async getTransactions(query: {
+    fromBlock?: number;
+    toBlock?: number;
+    address?: string;
+    limit?: number;
+  }) {
+    const { fromBlock, toBlock, address, limit = 100 } = query;
+    let sql = "SELECT * FROM transactions WHERE 1=1";
+    const params: any[] = [];
+
+    if (fromBlock !== null) {
+      sql += " AND block_number >= ?";
+      params.push(fromBlock);
+    }
+    if (toBlock !== null) {
+      sql += " AND block_number <= ?";
+      params.push(toBlock);
+    }
+    if (address) {
+      sql += " AND (from_address = ? OR to_address = ?)";
+      params.push(address.toLowerCase(), address.toLowerCase());
+    }
+
+    sql += " ORDER BY block_number DESC LIMIT ?";
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  async getStats() {
+    return new Promise((resolve, reject) => {
+      const queries = [
+        "SELECT COUNT(*) as total_events FROM events",
+        "SELECT COUNT(*) as total_transactions FROM transactions",
+        "SELECT COUNT(*) as total_blocks FROM blocks",
+        "SELECT COUNT(*) as monitored_contracts FROM contracts",
+        "SELECT MAX(number) as latest_block FROM blocks",
+      ];
+
+      Promise.all(
+        queries.map(
+          (sql) =>
+            new Promise((res, rej) => {
+              this.db.get(sql, (err, row) => {
+                if (err) rej(err);
+                else res(row);
+              });
+            })
+        )
+      )
+        .then((results: any[]) => {
+          resolve({
+            totalEvents: results[0].total_events,
+            totalTransactions: results[1].total_transactions,
+            totalBlocks: results[2].total_blocks,
+            monitoredContracts: results[3].monitored_contracts,
+            latestBlock: results[4].latest_block,
+            isRunning: this.isRunning,
+          });
+        })
+        .catch(reject);
+    });
+  }
 }
 
 export default Indexar;
