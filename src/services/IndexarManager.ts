@@ -12,6 +12,7 @@ class IndexarManager {
     provider: ethers.JsonRpcProvider;
     dbPath: string;
     batchSize: number;
+    startBlock: number;
   }) {
     this.indexar = new Indexar(config);
 

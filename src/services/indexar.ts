@@ -17,14 +17,17 @@ class Indexar extends EventEmitter {
     provider: ethers.JsonRpcProvider;
     dbPath: string;
     batchSize: number;
+    startBlock: number;
   }) {
     super();
     this.provider = config.provider;
     this.db = new sqlite3.Database(config.dbPath || "indexar.db");
     this.contracts = new Map();
     this.batchSize = config.batchSize;
-    this.lastProcessedBlock = 0;
+    this.lastProcessedBlock = config.startBlock;
     this.isRunning = false;
+
+    this.initializeDb();
   }
 
   initializeDb() {
@@ -93,14 +96,32 @@ class Indexar extends EventEmitter {
         contract,
       });
 
-      this.db.run(
-        "INSERT INTO contracts (address, name, abi) VALUES (?, ?, ?)",
-        [address, name, JSON.stringify(abi)],
-        (err) => {
-          if (err) console.error("Error adding contract:", err);
+      // Check if contract already exists
+      this.db.get(
+        "SELECT address FROM contracts WHERE address = ?",
+        [address],
+        (err, row) => {
+          if (err) {
+            console.error("Error checking contract:", err);
+            return;
+          }
+
+          if (row) {
+            console.log(`Contract ${name} already exists in database`);
+            return;
+          }
+
+          // Insert new contract
+          this.db.run(
+            "INSERT OR IGNORE INTO contracts (address, name, abi) VALUES (?, ?, ?)",
+            [address, name, JSON.stringify(abi)],
+            (err) => {
+              if (err) console.error("Error adding contract:", err);
+              else console.log(`Contract ${name} added successfully`);
+            }
+          );
         }
       );
-      console.log(`Contract ${name} added successfully`);
     } catch (error) {
       console.error("Error adding contract:", error);
     }
@@ -165,7 +186,18 @@ class Indexar extends EventEmitter {
       console.log(`Processing blocks ${blockNumber} to ${end}`);
 
       try {
-        await this.processBatchBlocks(blockNumber, end);
+        // Process blocks sequentially instead of in parallel
+        for (
+          let currentBlock = blockNumber;
+          currentBlock <= end;
+          currentBlock++
+        ) {
+          if (!this.isRunning) break;
+          await this.processBlock(currentBlock, false);
+          // Add a small delay between blocks to avoid rate limits
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
         this.lastProcessedBlock = end;
 
         this.emit("progress", {
@@ -174,58 +206,70 @@ class Indexar extends EventEmitter {
           percentage: ((end - fromBlock) / (toBlock - fromBlock)) * 100,
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Increase delay between batches to avoid rate limits
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (error) {
         console.error("Error processing blocks:", error);
+        // Add exponential backoff on error
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
-  }
-
-  async processBatchBlocks(fromBlock: number, toBlock: number) {
-    console.log(`Processing blocks ${fromBlock} to ${toBlock}`);
-    const promises = [];
-
-    for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber++) {
-      promises.push(this.processBlock(blockNumber));
-    }
-
-    await Promise.all(promises);
   }
 
   async processBlock(blockNumber: number, isRealTime: boolean = true) {
     console.log(`Processing block ${blockNumber}`);
-    try {
-      const block = await this.provider.getBlock(blockNumber);
-      if (!block) {
-        console.log(`Block ${blockNumber} not found, skipping`);
-        return;
-      }
+    let retries = 3;
 
-      this.db.run(
-        "INSERT INTO blocks (number, hash, timestamp) VALUES (?, ?, ?)",
-        [block.number, block.hash, block.timestamp],
-        (err) => {
-          if (err) console.error("Error inserting block:", err);
+    while (retries > 0) {
+      try {
+        const block = await this.provider.getBlock(blockNumber);
+        if (!block) {
+          console.log(`Block ${blockNumber} not found, skipping`);
+          return;
         }
-      );
 
-      for (const tx of block.transactions) {
-        // process transaction
-        await this.processTransaction(tx, block.timestamp);
+        this.db.run(
+          "INSERT OR IGNORE INTO blocks (number, hash, timestamp) VALUES (?, ?, ?)",
+          [block.number, block.hash, block.timestamp],
+          (err) => {
+            if (err) console.error("Error inserting block:", err);
+          }
+        );
+
+        // Process transactions sequentially
+        for (const tx of block.transactions) {
+          if (!this.isRunning) break;
+          await this.processTransaction(tx, block.timestamp);
+          // Add a small delay between transactions
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        // Process events
+        await this.processBlockEvents(blockNumber);
+
+        if (isRealTime) {
+          this.lastProcessedBlock = blockNumber;
+          this.emit("blockProcessed", {
+            blockNumber,
+            timestamp: block.timestamp,
+          });
+        }
+
+        // Success, break the retry loop
+        break;
+      } catch (error: any) {
+        retries--;
+        if (error?.code === 429 || error?.message?.includes("rate limit")) {
+          console.log(
+            `Rate limit hit, retrying in 5 seconds... (${retries} retries left)`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } else {
+          console.error("Error processing block:", error);
+          if (retries === 0) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
-
-      // process events
-      await this.processBlockEvents(blockNumber);
-
-      if (isRealTime) {
-        this.lastProcessedBlock = blockNumber;
-        this.emit("blockProcessed", {
-          blockNumber,
-          timestamp: block.timestamp,
-        });
-      }
-    } catch (error) {
-      console.error("Error processing block:", error);
     }
   }
 
@@ -235,17 +279,17 @@ class Indexar extends EventEmitter {
       const txReceipt = await this.provider.getTransactionReceipt(tx);
 
       if (!txResponse) {
-        console.log(`Transaction ${tx} not found, skipping`);
+        console.warn(`Transaction ${tx} not found, skipping`);
         return;
       }
 
       if (!txReceipt) {
-        console.log(`Transaction receipt ${tx} not found, skipping`);
+        console.warn(`Transaction receipt ${tx} not found, skipping`);
         return;
       }
 
       this.db.run(
-        "INSERT INTO transactions (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO transactions (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           tx,
           txResponse.blockNumber,
@@ -258,11 +302,11 @@ class Indexar extends EventEmitter {
           txReceipt.status,
         ],
         (err) => {
-          if (err) console.error("Error inserting transaction:", err);
+          if (err) console.warn("Error inserting transaction:", err);
         }
       );
     } catch (error) {
-      console.error("Error processing transaction:", error);
+      console.warn("Error processing transaction:", error);
     }
   }
 
@@ -312,7 +356,7 @@ class Indexar extends EventEmitter {
 
       this.db.run(
         `
-        INSERT INTO events 
+        INSERT OR IGNORE INTO events 
         (contract_address, event_name, block_number, transaction_hash, log_index, args, timestamp)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
