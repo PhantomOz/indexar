@@ -221,6 +221,38 @@ class Indexar extends EventEmitter {
       console.error("Error processing block:", error);
     }
   }
+
+  async processTransaction(tx: ethers.Transaction, timestamp: number) {
+    try {
+      const txReceipt = await this.provider.getTransactionReceipt(
+        tx.hash as string
+      );
+      if (!txReceipt) {
+        console.log(`Transaction ${tx.hash} not found, skipping`);
+        return;
+      }
+
+      this.db.run(
+        "INSERT INTO transactions (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          tx.hash,
+          txReceipt.blockNumber,
+          tx.from,
+          tx.to,
+          tx.value,
+          txReceipt.gasUsed,
+          txReceipt.gasPrice,
+          timestamp,
+          txReceipt.status,
+        ],
+        (err) => {
+          if (err) console.error("Error inserting transaction:", err);
+        }
+      );
+    } catch (error) {
+      console.error("Error processing transaction:", error);
+    }
+  }
 }
 
 export default Indexar;
