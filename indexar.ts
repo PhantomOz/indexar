@@ -1,11 +1,16 @@
 import { EventEmitter } from "events";
 import { ethers } from "ethers";
 import sqlite3 from "sqlite3";
+import type { AbiItem } from "viem";
+import type { AbiConstructor } from "abitype";
 
 class Indexar extends EventEmitter {
   provider: ethers.JsonRpcProvider;
   db: sqlite3.Database;
-  contracts: Map<string, ethers.Contract>;
+  contracts: Map<
+    string,
+    { name: string; abi: ethers.InterfaceAbi; contract: ethers.Contract }
+  >;
   lastProcessedBlock: number;
   batchSize: number;
   isRunning: boolean;
@@ -80,4 +85,28 @@ class Indexar extends EventEmitter {
       this.db.run(sql);
     });
   }
+
+  addContract(address: string, name: string, abi: ethers.InterfaceAbi) {
+    try {
+      const contract = new ethers.Contract(address, abi, this.provider);
+      this.contracts.set(address, {
+        name,
+        abi,
+        contract,
+      });
+
+      this.db.run(
+        "INSERT INTO contracts (address, name, abi) VALUES (?, ?, ?)",
+        [address, name, JSON.stringify(abi)],
+        (err) => {
+          if (err) console.error("Error adding contract:", err);
+        }
+      );
+      console.log(`Contract ${name} added successfully`);
+    } catch (error) {
+      console.error("Error adding contract:", error);
+    }
+  }
 }
+
+export default Indexar;
