@@ -143,6 +143,13 @@ class Indexar extends EventEmitter {
     }
   }
 
+  async stop() {
+    this.isRunning = false;
+    this.provider.removeAllListeners("block");
+    console.log("Indexar stopped");
+    this.emit("stopped");
+  }
+
   async processHistoricalBlocks(fromBlock: number, toBlock: number) {
     console.log(`Processing blocks from ${fromBlock} to ${toBlock}`);
 
