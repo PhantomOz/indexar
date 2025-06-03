@@ -1,8 +1,6 @@
 import { EventEmitter } from "events";
 import { ethers } from "ethers";
 import sqlite3 from "sqlite3";
-import type { AbiItem } from "viem";
-import type { AbiConstructor } from "abitype";
 
 class Indexar extends EventEmitter {
   provider: ethers.JsonRpcProvider;
@@ -477,6 +475,11 @@ class Indexar extends EventEmitter {
         })
         .catch(reject);
     });
+  }
+
+  close() {
+    this.stop();
+    this.db.close();
   }
 }
 
