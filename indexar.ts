@@ -187,8 +187,39 @@ class Indexar extends EventEmitter {
     await Promise.all(promises);
   }
 
-  async processBlock(blockNumber: number) {
+  async processBlock(blockNumber: number, isRealTime: boolean = true) {
     console.log(`Processing block ${blockNumber}`);
+    try {
+      const block = await this.provider.getBlock(blockNumber);
+      if (!block) {
+        console.log(`Block ${blockNumber} not found, skipping`);
+        return;
+      }
+
+      this.db.run(
+        "INSERT INTO blocks (number, hash, timestamp) VALUES (?, ?, ?)",
+        [block.number, block.hash, block.timestamp],
+        (err) => {
+          if (err) console.error("Error inserting block:", err);
+        }
+      );
+
+      for (const tx of block.transactions) {
+        // process transaction
+      }
+
+      // process events
+
+      if (isRealTime) {
+        this.lastProcessedBlock = blockNumber;
+        this.emit("blockProcessed", {
+          blockNumber,
+          timestamp: block.timestamp,
+        });
+      }
+    } catch (error) {
+      console.error("Error processing block:", error);
+    }
   }
 }
 
