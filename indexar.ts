@@ -132,7 +132,7 @@ class Indexar extends EventEmitter {
 
       this.provider.on("block", async (blockNumber) => {
         if (this.isRunning) {
-          //process block
+          await this.processBlock(blockNumber);
         }
       });
 
@@ -178,6 +178,17 @@ class Indexar extends EventEmitter {
 
   async processBatchBlocks(fromBlock: number, toBlock: number) {
     console.log(`Processing blocks ${fromBlock} to ${toBlock}`);
+    const promises = [];
+
+    for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber++) {
+      promises.push(this.processBlock(blockNumber));
+    }
+
+    await Promise.all(promises);
+  }
+
+  async processBlock(blockNumber: number) {
+    console.log(`Processing block ${blockNumber}`);
   }
 }
 
