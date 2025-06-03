@@ -42,4 +42,19 @@ class IndexarManager {
 
     return this.indexar;
   }
+
+  async addBatchContracts(
+    contracts: {
+      address: string;
+      name: string;
+      abi: ethers.InterfaceAbi;
+    }[]
+  ) {
+    for (const contract of contracts) {
+      this.indexar?.addContract(contract.address, contract.name, contract.abi);
+    }
+    console.log(`Added ${contracts.length} contracts`);
+  }
 }
+
+export default IndexarManager;
