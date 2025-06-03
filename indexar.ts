@@ -206,9 +206,11 @@ class Indexar extends EventEmitter {
 
       for (const tx of block.transactions) {
         // process transaction
+        await this.processTransaction(tx, block.timestamp);
       }
 
       // process events
+      await this.processBlockEvents(blockNumber);
 
       if (isRealTime) {
         this.lastProcessedBlock = blockNumber;
@@ -222,24 +224,29 @@ class Indexar extends EventEmitter {
     }
   }
 
-  async processTransaction(tx: ethers.Transaction, timestamp: number) {
+  async processTransaction(tx: string, timestamp: number) {
     try {
-      const txReceipt = await this.provider.getTransactionReceipt(
-        tx.hash as string
-      );
+      const txResponse = await this.provider.getTransaction(tx);
+      const txReceipt = await this.provider.getTransactionReceipt(tx);
+
+      if (!txResponse) {
+        console.log(`Transaction ${tx} not found, skipping`);
+        return;
+      }
+
       if (!txReceipt) {
-        console.log(`Transaction ${tx.hash} not found, skipping`);
+        console.log(`Transaction receipt ${tx} not found, skipping`);
         return;
       }
 
       this.db.run(
         "INSERT INTO transactions (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-          tx.hash,
-          txReceipt.blockNumber,
-          tx.from,
-          tx.to,
-          tx.value,
+          tx,
+          txResponse.blockNumber,
+          txResponse.from,
+          txResponse.to,
+          txResponse.value,
           txReceipt.gasUsed,
           txReceipt.gasPrice,
           timestamp,
@@ -252,6 +259,92 @@ class Indexar extends EventEmitter {
     } catch (error) {
       console.error("Error processing transaction:", error);
     }
+  }
+
+  async processBlockEvents(blockNumber: number) {
+    for (const [address, contractInfo] of this.contracts) {
+      try {
+        const filter = {
+          address: address,
+          fromBlock: blockNumber,
+          toBlock: blockNumber,
+        };
+
+        const logs = await this.provider.getLogs(filter);
+
+        for (const log of logs) {
+          await this.processEvent(log, contractInfo);
+        }
+      } catch (error) {
+        console.error(
+          `Error processing events for contract ${address}:`,
+          error
+        );
+      }
+    }
+  }
+
+  async processEvent(
+    log: ethers.EventLog,
+    contractInfo: {
+      name: string;
+      abi: ethers.InterfaceAbi;
+      contract: ethers.Contract;
+    }
+  ) {
+    try {
+      const parsedLog = contractInfo.contract.interface.parseLog(log);
+      if (!parsedLog) return;
+
+      const args: Record<string, any> = {};
+      parsedLog.args.forEach((arg, index) => {
+        const param = parsedLog.fragment.inputs[index];
+        args[param?.name ?? `arg${index}`] = this.serializeValue(arg);
+      });
+
+      // Get block timestamp
+      const block = await this.provider.getBlock(log.blockNumber);
+
+      this.db.run(
+        `
+        INSERT INTO events 
+        (contract_address, event_name, block_number, transaction_hash, log_index, args, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          log.address.toLowerCase(),
+          parsedLog.name,
+          log.blockNumber,
+          log.transactionHash,
+          log.index,
+          JSON.stringify(args),
+          block?.timestamp,
+        ]
+      );
+
+      this.emit("eventIndexed", {
+        contract: log.address,
+        event: parsedLog.name,
+        args,
+        blockNumber: log.blockNumber,
+        transactionHash: log.transactionHash,
+      });
+    } catch (error) {
+      console.error("Error processing event:", error);
+    }
+  }
+
+  serializeValue(value: any): any {
+    if (typeof value === "bigint") {
+      return value.toString();
+    }
+    if (ethers.isAddress(value)) {
+      return value.toLowerCase();
+    }
+    if (Array.isArray(value)) {
+      return value.map((v: any) => this.serializeValue(v));
+    }
+    return value;
   }
 }
 
