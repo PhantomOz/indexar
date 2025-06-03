@@ -353,6 +353,62 @@ class Indexar extends EventEmitter {
     }
     return value;
   }
+
+  // Querying Methods
+
+  async getEvents(query: {
+    contractAddress?: string;
+    eventName?: string;
+    fromBlock?: number;
+    toBlock?: number;
+    limit?: number;
+  }) {
+    const {
+      contractAddress,
+      eventName,
+      fromBlock,
+      toBlock,
+      limit = 100,
+    } = query;
+    let sql = "SELECT * FROM events WHERE 1=1";
+    const params: any[] = [];
+
+    if (contractAddress) {
+      sql += " AND contract_address = ?";
+      params.push(contractAddress);
+    }
+
+    if (eventName) {
+      sql += " AND event_name = ?";
+      params.push(eventName);
+    }
+
+    if (fromBlock) {
+      sql += " AND block_number >= ?";
+      params.push(fromBlock);
+    }
+
+    if (toBlock) {
+      sql += " AND block_number <= ?";
+      params.push(toBlock);
+    }
+
+    sql += " ORDER BY block_number DESC, log_index DESC LIMIT ?";
+    params.push(limit);
+
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else
+          resolve(
+            rows.map((row: any) => ({
+              ...row,
+              args: JSON.parse(row.args),
+            }))
+          );
+      });
+    });
+  }
 }
 
 export default Indexar;
