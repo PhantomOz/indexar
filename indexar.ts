@@ -285,7 +285,7 @@ class Indexar extends EventEmitter {
   }
 
   async processEvent(
-    log: ethers.EventLog,
+    log: ethers.Log,
     contractInfo: {
       name: string;
       abi: ethers.InterfaceAbi;
