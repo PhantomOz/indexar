@@ -124,6 +124,10 @@ class Indexar extends EventEmitter {
 
       if (this.lastProcessedBlock < currentBlock) {
         // process blocks
+        await this.processHistoricalBlocks(
+          this.lastProcessedBlock,
+          currentBlock
+        );
       }
 
       this.provider.on("block", async (blockNumber) => {
@@ -137,6 +141,43 @@ class Indexar extends EventEmitter {
       console.error("Error starting Indexar:", error);
       this.isRunning = false;
     }
+  }
+
+  async processHistoricalBlocks(fromBlock: number, toBlock: number) {
+    console.log(`Processing blocks from ${fromBlock} to ${toBlock}`);
+
+    for (
+      let blockNumber = fromBlock;
+      blockNumber <= toBlock;
+      blockNumber += this.batchSize
+    ) {
+      if (!this.isRunning) {
+        console.log("Indexar is not running, stopping processing");
+        break;
+      }
+
+      const end = Math.min(blockNumber + this.batchSize - 1, toBlock);
+      console.log(`Processing blocks ${blockNumber} to ${end}`);
+
+      try {
+        await this.processBatchBlocks(blockNumber, end);
+        this.lastProcessedBlock = end;
+
+        this.emit("progress", {
+          processed: end,
+          total: toBlock,
+          percentage: ((end - fromBlock) / (toBlock - fromBlock)) * 100,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error("Error processing blocks:", error);
+      }
+    }
+  }
+
+  async processBatchBlocks(fromBlock: number, toBlock: number) {
+    console.log(`Processing blocks ${fromBlock} to ${toBlock}`);
   }
 }
 
