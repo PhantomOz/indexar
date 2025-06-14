@@ -3,6 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "api": "bun run api.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -10,8 +14,11 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@apollo/server": "^4.10.0",
     "dotenv": "^16.5.0",
     "ethers": "^6.14.3",
+    "graphql": "^16.8.1",
+    "graphql-tag": "^2.12.6",
     "sqlite3": "^5.1.7"
   }
 }
