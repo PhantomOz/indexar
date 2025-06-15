@@ -14,10 +14,10 @@ export const typeDefs = gql`
     fromAddress: String!
     toAddress: String
     value: String!
-    gasUsed: Int!
-    gasPrice: String!
-    timestamp: Int!
-    status: Int!
+    gasUsed: Int
+    gasPrice: String
+    timestamp: Int
+    status: Int
   }
 
   type Event {
@@ -48,6 +48,18 @@ export const typeDefs = gql`
     isRunning: Boolean!
   }
 
+  type PaginationInfo {
+    total: Int!
+    page: Int!
+    pageSize: Int!
+    totalPages: Int!
+  }
+
+  type PaginatedEvents {
+    events: [Event!]!
+    pagination: PaginationInfo!
+  }
+
   scalar JSON
 
   type Query {
@@ -68,6 +80,7 @@ export const typeDefs = gql`
       toBlock: Int
       limit: Int
     ): [Event!]!
+    getAllEvents(page: Int, pageSize: Int): PaginatedEvents!
     contracts: [Contract!]!
   }
 `;

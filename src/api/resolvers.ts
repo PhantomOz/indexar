@@ -130,6 +130,14 @@ export const resolvers = {
       });
     },
 
+    getAllEvents: async (
+      _: unknown,
+      { page = 1, pageSize = 100 }: { page?: number; pageSize?: number },
+      { indexar }: Context
+    ) => {
+      return await indexar.getAllEvents(page, pageSize);
+    },
+
     contracts: async (_: unknown, __: unknown, { indexar }: Context) => {
       const sql = `
         SELECT address, name, abi, created_at as createdAt

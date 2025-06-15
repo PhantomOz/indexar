@@ -412,12 +412,25 @@ class Indexar extends EventEmitter {
       toBlock,
       limit = 100,
     } = query;
-    let sql = "SELECT * FROM events WHERE 1=1";
+    let sql = `
+      SELECT 
+        id,
+        contract_address as contractAddress,
+        event_name as eventName,
+        block_number as blockNumber,
+        transaction_hash as transactionHash,
+        log_index as logIndex,
+        args,
+        timestamp,
+        created_at as createdAt
+      FROM events 
+      WHERE 1=1
+    `;
     const params: any[] = [];
 
     if (contractAddress) {
       sql += " AND contract_address = ?";
-      params.push(contractAddress);
+      params.push(contractAddress.toLowerCase());
     }
 
     if (eventName) {
@@ -459,14 +472,27 @@ class Indexar extends EventEmitter {
     limit?: number;
   }) {
     const { fromBlock, toBlock, address, limit = 100 } = query;
-    let sql = "SELECT * FROM transactions WHERE 1=1";
+    let sql = `
+      SELECT 
+        hash,
+        block_number as blockNumber,
+        from_address as fromAddress,
+        to_address as toAddress,
+        CASE WHEN value IS NULL THEN '0' ELSE value END as value,
+        CASE WHEN gas_used IS NULL THEN 0 ELSE gas_used END as gasUsed,
+        CASE WHEN gas_price IS NULL THEN '0' ELSE gas_price END as gasPrice,
+        CASE WHEN timestamp IS NULL THEN 0 ELSE timestamp END as timestamp,
+        CASE WHEN status IS NULL THEN 0 ELSE status END as status
+      FROM transactions 
+      WHERE 1=1
+    `;
     const params: any[] = [];
 
-    if (fromBlock !== null) {
+    if (fromBlock !== undefined) {
       sql += " AND block_number >= ?";
       params.push(fromBlock);
     }
-    if (toBlock !== null) {
+    if (toBlock !== undefined) {
       sql += " AND block_number <= ?";
       params.push(toBlock);
     }
@@ -518,6 +544,66 @@ class Indexar extends EventEmitter {
           });
         })
         .catch(reject);
+    });
+  }
+
+  async getAllEvents(page: number = 1, pageSize: number = 100) {
+    const offset = (page - 1) * pageSize;
+
+    return new Promise((resolve, reject) => {
+      // First get total count of non-null event names
+      this.db.get<{ total: number }>(
+        "SELECT COUNT(*) as total FROM events WHERE event_name IS NOT NULL",
+        (err, countResult) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          if (!countResult) {
+            reject(new Error("Failed to get total count"));
+            return;
+          }
+
+          // Then get paginated results, excluding null event names
+          const sql = `
+            SELECT 
+              id,
+              contract_address as contractAddress,
+              event_name as eventName,
+              block_number as blockNumber,
+              transaction_hash as transactionHash,
+              log_index as logIndex,
+              args,
+              timestamp,
+              created_at as createdAt
+            FROM events 
+            WHERE event_name IS NOT NULL
+            ORDER BY block_number DESC, log_index DESC 
+            LIMIT ? OFFSET ?
+          `;
+
+          this.db.all(sql, [pageSize, offset], (err, rows) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+
+            resolve({
+              events: rows.map((row: any) => ({
+                ...row,
+                args: JSON.parse(row.args),
+              })),
+              pagination: {
+                total: countResult.total,
+                page,
+                pageSize,
+                totalPages: Math.ceil(countResult.total / pageSize),
+              },
+            });
+          });
+        }
+      );
     });
   }
 

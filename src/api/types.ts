@@ -50,3 +50,15 @@ export interface Stats {
   latestBlock?: number;
   isRunning: boolean;
 }
+
+export interface PaginationInfo {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PaginatedEvents {
+  events: Event[];
+  pagination: PaginationInfo;
+}
