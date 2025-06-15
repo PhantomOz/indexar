@@ -16,7 +16,9 @@ async function main() {
     provider: new ethers.JsonRpcProvider(process.env.RPC_URL),
     dbPath: "./indexar.db",
     batchSize: 50,
-    startBlock: 25698921,
+    startBlock: await new ethers.JsonRpcProvider(
+      process.env.RPC_URL
+    ).getBlockNumber(),
   };
 
   const indexarManager = new IndexarManager();
@@ -26,6 +28,11 @@ async function main() {
     {
       address: "0x820507043F0abdC50C629B09cbC61323967331e3",
       name: "LendBit",
+      abi: LendBitAbi,
+    },
+    {
+      address: "0x052C88f4f88c9330f6226cdC120ba173416134C3",
+      name: "LendBitV1",
       abi: LendBitAbi,
     },
   ];
