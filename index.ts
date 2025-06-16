@@ -50,7 +50,7 @@ async function main() {
 
   // Start Apollo Server
   const { url } = await startStandaloneServer(server, {
-    listen: { port: 4000 },
+    listen: { port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4000 },
     context: async () => ({
       indexar, // Make indexar instance available in resolvers
     }),
