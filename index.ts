@@ -45,6 +45,7 @@ async function main() {
   const server = new ApolloServer<Context>({
     typeDefs,
     resolvers,
+    introspection: true, // Enable introspection
   });
 
   // Start Apollo Server
@@ -57,6 +58,7 @@ async function main() {
 
   console.log(`🚀 Indexar service started`);
   console.log(`🚀 GraphQL server ready at ${url}`);
+  console.log(`🚀 Apollo Studio Explorer available at ${url}`);
   await indexar.start();
 }
 
