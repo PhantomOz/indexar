@@ -18,6 +18,10 @@ const options = {
         url: "http://localhost:4000",
         description: "Development server",
       },
+      {
+        url: "https://indexar-staging.up.railway.app",
+        description: "Staging server",
+      },
     ],
     components: {
       schemas: {

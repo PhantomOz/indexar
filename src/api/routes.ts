@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import type { Context } from "./types";
 import pool from "../config/database";
+import { getAllEvents, getEvents, getStats, getTransactions } from "./helper";
 
 export function createRoutes(context: Context) {
   const router = Router();
@@ -58,8 +59,9 @@ export function createRoutes(context: Context) {
    */
   router.get("/stats", async (req: Request, res: Response) => {
     console.log("Stats endpoint called");
+    console.log(context);
     try {
-      const stats = await context.indexar.getStats();
+      const stats = await getStats();
       console.log("Stats retrieved:", stats);
       res.json(stats);
     } catch (error) {
@@ -236,7 +238,7 @@ export function createRoutes(context: Context) {
         ? parseInt(req.query.limit as string)
         : undefined;
 
-      const transactions = await context.indexar.getTransactions({
+      const transactions = await getTransactions({
         fromBlock,
         toBlock,
         address,
@@ -319,7 +321,7 @@ export function createRoutes(context: Context) {
         ? parseInt(req.query.limit as string)
         : undefined;
 
-      const events = await context.indexar.getEvents({
+      const events = await getEvents({
         contractAddress,
         eventName,
         fromBlock,
@@ -378,11 +380,8 @@ export function createRoutes(context: Context) {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const pageSize = parseInt(req.query.pageSize as string) || 100;
-
-      const paginatedEvents = await context.indexar.getAllEvents(
-        page,
-        pageSize
-      );
+      console.log("I was called before await");
+      const paginatedEvents = await getAllEvents(page, pageSize);
       console.log("Paginated events retrieved");
       res.json(paginatedEvents);
     } catch (error) {

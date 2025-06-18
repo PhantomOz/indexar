@@ -2,8 +2,6 @@ import { ethers } from "ethers";
 import express from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
-import IndexarManager from "./src/services/IndexarManager";
-import LendBitAbi from "./abis/LendBit.json";
 import type { Context } from "./src/api/types";
 import { createRoutes } from "./src/api/routes";
 import { specs } from "./src/api/swagger";
@@ -12,40 +10,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 async function main() {
-  // Initialize Indexar
-  const config = {
-    provider: new ethers.JsonRpcProvider(process.env.RPC_URL),
-    dbPath: "./indexar.db",
-    batchSize: 50,
-    startBlock: await new ethers.JsonRpcProvider(
-      process.env.RPC_URL
-    ).getBlockNumber(),
-  };
-
-  const indexarManager = new IndexarManager();
-  const indexar = await indexarManager.initialize(config);
-
-  const contracts = [
-    {
-      address: "0x820507043F0abdC50C629B09cbC61323967331e3",
-      name: "LendBit",
-      abi: LendBitAbi,
-    },
-    {
-      address: "0x052C88f4f88c9330f6226cdC120ba173416134C3",
-      name: "LendBitV1",
-      abi: LendBitAbi,
-    },
-  ];
-
-  await indexarManager.addBatchContracts(contracts);
-
-  // DEBUG: Comment out indexer start to test API endpoints
-  // Start the indexer in the background
-  // indexar.start().catch((error) => {
-  //   console.error("Indexer error:", error);
-  // });
-
   // Initialize Express app
   const app = express();
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
@@ -67,7 +31,8 @@ async function main() {
   );
 
   // API routes
-  const context: Context = { indexar };
+  // The context will be set up by the worker/indexer process, so here we just pass an empty object or a stub
+  const context: Context = {} as Context;
   const apiRoutes = createRoutes(context);
 
   // Test route
@@ -120,7 +85,6 @@ async function main() {
 
   // Start server
   app.listen(port, () => {
-    console.log(`🚀 Indexar service started`);
     console.log(`🚀 Express server ready at http://localhost:${port}`);
     console.log(
       `🚀 API Documentation available at http://localhost:${port}/api-docs`
@@ -128,7 +92,6 @@ async function main() {
     console.log(
       `🚀 Health check available at http://localhost:${port}/api/health`
     );
-    console.log(`🔧 DEBUG MODE: Indexer disabled for testing`);
   });
 }
 

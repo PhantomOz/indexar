@@ -4,7 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "bun run index.ts"
+    "start": "bun run index.ts & bun run indexer-worker.ts",
+    "indexer": "bun run indexer-worker.ts",
+    "api": "bun run index.ts",
+    "dev": "bun run index.ts & bun run indexer-worker.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

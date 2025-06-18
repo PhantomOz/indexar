@@ -1,0 +1,392 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      { "name": "_hub", "type": "address", "internalType": "address" },
+      { "name": "_chainSelector", "type": "uint64", "internalType": "uint64" },
+      { "name": "_link", "type": "address", "internalType": "address" },
+      { "name": "_router", "type": "address", "internalType": "address" },
+      { "name": "_weth", "type": "address", "internalType": "address" }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  { "type": "receive", "stateMutability": "payable" },
+  {
+    "type": "function",
+    "name": "NATIVE_TOKEN",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "addToken",
+    "inputs": [
+      { "name": "_token", "type": "address", "internalType": "address" },
+      { "name": "_hubToken", "type": "address", "internalType": "address" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "borrowFromPool",
+    "inputs": [
+      { "name": "tokenAddress", "type": "address", "internalType": "address" },
+      { "name": "amountToBorrow", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "ccipReceive",
+    "inputs": [
+      {
+        "name": "message",
+        "type": "tuple",
+        "internalType": "struct Client.Any2EVMMessage",
+        "components": [
+          { "name": "messageId", "type": "bytes32", "internalType": "bytes32" },
+          {
+            "name": "sourceChainSelector",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          { "name": "sender", "type": "bytes", "internalType": "bytes" },
+          { "name": "data", "type": "bytes", "internalType": "bytes" },
+          {
+            "name": "destTokenAmounts",
+            "type": "tuple[]",
+            "internalType": "struct Client.EVMTokenAmount[]",
+            "components": [
+              { "name": "token", "type": "address", "internalType": "address" },
+              { "name": "amount", "type": "uint256", "internalType": "uint256" }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "closeListingAd",
+    "inputs": [
+      { "name": "_listingId", "type": "uint96", "internalType": "uint96" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "closeRequest",
+    "inputs": [
+      { "name": "_requestId", "type": "uint96", "internalType": "uint96" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createLendingRequest",
+    "inputs": [
+      { "name": "_amount", "type": "uint256", "internalType": "uint256" },
+      { "name": "_interest", "type": "uint16", "internalType": "uint16" },
+      { "name": "_returnDate", "type": "uint256", "internalType": "uint256" },
+      { "name": "_loanCurrency", "type": "address", "internalType": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "createLoanListing",
+    "inputs": [
+      { "name": "_amount", "type": "uint256", "internalType": "uint256" },
+      { "name": "_min_amount", "type": "uint256", "internalType": "uint256" },
+      { "name": "_max_amount", "type": "uint256", "internalType": "uint256" },
+      { "name": "_returnDate", "type": "uint256", "internalType": "uint256" },
+      { "name": "_interest", "type": "uint16", "internalType": "uint16" },
+      { "name": "_loanCurrency", "type": "address", "internalType": "address" },
+      { "name": "_whitelist", "type": "address[]", "internalType": "address[]" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "deposit",
+    "inputs": [
+      { "name": "tokenAddress", "type": "address", "internalType": "address" },
+      {
+        "name": "amountToDeposit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "depositCollateral",
+    "inputs": [
+      {
+        "name": "_tokenCollateralAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_amountOfCollateral",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "getFees",
+    "inputs": [
+      {
+        "name": "message",
+        "type": "tuple",
+        "internalType": "struct Client.EVM2AnyMessage",
+        "components": [
+          { "name": "receiver", "type": "bytes", "internalType": "bytes" },
+          { "name": "data", "type": "bytes", "internalType": "bytes" },
+          {
+            "name": "tokenAmounts",
+            "type": "tuple[]",
+            "internalType": "struct Client.EVMTokenAmount[]",
+            "components": [
+              { "name": "token", "type": "address", "internalType": "address" },
+              { "name": "amount", "type": "uint256", "internalType": "uint256" }
+            ]
+          },
+          { "name": "feeToken", "type": "address", "internalType": "address" },
+          { "name": "extraArgs", "type": "bytes", "internalType": "bytes" }
+        ]
+      }
+    ],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getHubTokenAddress",
+    "inputs": [
+      { "name": "_token", "type": "address", "internalType": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRouter",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "repay",
+    "inputs": [
+      { "name": "tokenAddress", "type": "address", "internalType": "address" },
+      { "name": "amountToRepay", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "repayLoan",
+    "inputs": [
+      { "name": "_requestId", "type": "uint96", "internalType": "uint96" },
+      { "name": "_token", "type": "address", "internalType": "address" },
+      { "name": "_amount", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "requestLoanFromListing",
+    "inputs": [
+      { "name": "_listingId", "type": "uint96", "internalType": "uint96" },
+      { "name": "_amount", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "s_isMessageExecuted",
+    "inputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "s_isTokenSupported",
+    "inputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "s_tokenToHubTokens",
+    "inputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "serviceRequest",
+    "inputs": [
+      { "name": "_requestId", "type": "uint96", "internalType": "uint96" },
+      { "name": "_tokenAddress", "type": "address", "internalType": "address" },
+      { "name": "_amount", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "supportsInterface",
+    "inputs": [
+      { "name": "interfaceId", "type": "bytes4", "internalType": "bytes4" }
+    ],
+    "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [
+      { "name": "tokenAddress", "type": "address", "internalType": "address" },
+      {
+        "name": "amountToWithdrawn",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "withdrawCollateral",
+    "inputs": [
+      {
+        "name": "_tokenCollateralAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_amountOfCollateral",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "name": "CCIPMessageExecuted",
+    "inputs": [
+      {
+        "name": "messageId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceChainSelector",
+        "type": "uint64",
+        "indexed": true,
+        "internalType": "uint64"
+      },
+      {
+        "name": "receiver",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "destTokenAmounts",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct Client.EVMTokenAmount[]",
+        "components": [
+          { "name": "token", "type": "address", "internalType": "address" },
+          { "name": "amount", "type": "uint256", "internalType": "uint256" }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CCIPMessageSent",
+    "inputs": [
+      {
+        "name": "messageId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceChainSelector",
+        "type": "uint64",
+        "indexed": true,
+        "internalType": "uint64"
+      },
+      {
+        "name": "sender",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "destTokenAmounts",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct Client.EVMTokenAmount[]",
+        "components": [
+          { "name": "token", "type": "address", "internalType": "address" },
+          { "name": "amount", "type": "uint256", "internalType": "uint256" }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidRouter",
+    "inputs": [
+      { "name": "router", "type": "address", "internalType": "address" }
+    ]
+  },
+  { "type": "error", "name": "Spoke__CollateralAmountTooLow", "inputs": [] },
+  { "type": "error", "name": "Spoke__DateMustBeInFuture", "inputs": [] },
+  { "type": "error", "name": "Spoke__InsufficientCollateral", "inputs": [] },
+  { "type": "error", "name": "Spoke__InsufficientFee", "inputs": [] },
+  {
+    "type": "error",
+    "name": "Spoke__InsufficientNativeCollateral",
+    "inputs": []
+  },
+  { "type": "error", "name": "Spoke__InvalidAmount", "inputs": [] },
+  { "type": "error", "name": "Spoke__InvalidCollateralToken", "inputs": [] },
+  { "type": "error", "name": "Spoke__InvalidInterest", "inputs": [] },
+  { "type": "error", "name": "Spoke__InvalidRequest", "inputs": [] },
+  { "type": "error", "name": "Spoke__NotHub", "inputs": [] },
+  { "type": "error", "name": "Spoke__TokenNotSupported", "inputs": [] },
+  { "type": "error", "name": "Spoke__TransferFailed", "inputs": [] },
+  { "type": "error", "name": "Spoke__ZeroAmount", "inputs": [] }
+]

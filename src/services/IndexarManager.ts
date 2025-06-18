@@ -56,6 +56,13 @@ class IndexarManager {
     }
     console.log(`Added ${contracts.length} contracts`);
   }
+
+  async removeBatchContracts(addressess: string[]) {
+    for (const address of addressess) {
+      this.indexar?.removeContract(address);
+    }
+    console.log(`removed ${addressess.length} contracts`);
+  }
 }
 
 export default IndexarManager;
