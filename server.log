@@ -1,0 +1,25 @@
+Successfully connected to PostgreSQL
+Added 2 contracts
+Indexar starting...
+🚀 Indexar service started
+🚀 Express server ready at http://localhost:4000
+🚀 API Documentation available at http://localhost:4000/api-docs
+🚀 Health check available at http://localhost:4000/api/health
+Contract LendBitV1 already exists in database
+Contract LendBit already exists in database
+Database initialized successfully
+Current block: 27207467
+last processed block: 27207466
+Processing blocks from 27207466 to 27207467
+Processing blocks 27207466 to 27207467
+⏳ Progress: 100.00% (27207467/27207467)
+✅ Indexer started successfully
+Processing block 27207515
+Processing block 27207516
+Processing block 27207517
+Processing block 27207518
+Processing block 27207519
+Processing block 27207520
+Processing block 27207521
+Processing block 27207522
+Processing block 27207523

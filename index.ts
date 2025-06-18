@@ -1,11 +1,12 @@
 import { ethers } from "ethers";
-import { ApolloServer } from "@apollo/server";
-import { startStandaloneServer } from "@apollo/server/standalone";
+import express from "express";
+import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import IndexarManager from "./src/services/IndexarManager";
 import LendBitAbi from "./abis/LendBit.json";
-import { typeDefs } from "./src/api/schema";
-import { resolvers } from "./src/api/resolvers";
 import type { Context } from "./src/api/types";
+import { createRoutes } from "./src/api/routes";
+import { specs } from "./src/api/swagger";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -39,27 +40,96 @@ async function main() {
 
   await indexarManager.addBatchContracts(contracts);
 
-  // Start Indexar service
+  // DEBUG: Comment out indexer start to test API endpoints
+  // Start the indexer in the background
+  // indexar.start().catch((error) => {
+  //   console.error("Indexer error:", error);
+  // });
 
-  // Initialize Apollo Server
-  const server = new ApolloServer<Context>({
-    typeDefs,
-    resolvers,
-    introspection: true, // Enable introspection
+  // Initialize Express app
+  const app = express();
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
+
+  // Middleware
+  app.use(cors());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Swagger documentation
+  app.use(
+    "/api-docs",
+    swaggerUi.serve,
+    swaggerUi.setup(specs, {
+      customCss: ".swagger-ui .topbar { display: none }",
+      customSiteTitle: "Indexar API Documentation",
+      customfavIcon: "/favicon.ico",
+    })
+  );
+
+  // API routes
+  const context: Context = { indexar };
+  const apiRoutes = createRoutes(context);
+
+  // Test route
+  app.get("/test", (req, res) => {
+    res.json({ message: "Test route working" });
   });
 
-  // Start Apollo Server
-  const { url } = await startStandaloneServer(server, {
-    listen: { port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4000 },
-    context: async () => ({
-      indexar, // Make indexar instance available in resolvers
-    }),
+  app.use("/api", apiRoutes);
+
+  // Root endpoint
+  app.get("/", (req, res) => {
+    res.json({
+      message: "Indexar API",
+      version: "1.0.0",
+      documentation: "/api-docs",
+      endpoints: {
+        health: "/api/health",
+        stats: "/api/stats",
+        blocks: "/api/blocks",
+        transactions: "/api/transactions",
+        events: "/api/events",
+        contracts: "/api/contracts",
+      },
+    });
   });
 
-  console.log(`🚀 Indexar service started`);
-  console.log(`🚀 GraphQL server ready at ${url}`);
-  console.log(`🚀 Apollo Studio Explorer available at ${url}`);
-  await indexar.start();
+  // Error handling middleware
+  app.use(
+    (
+      err: any,
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => {
+      console.error("Error:", err);
+      res.status(500).json({
+        error: "Internal server error",
+        message: err.message || "Something went wrong",
+      });
+    }
+  );
+
+  // 404 handler
+  app.use("*", (req, res) => {
+    res.status(404).json({
+      error: "Not found",
+      message: `Route ${req.originalUrl} not found`,
+    });
+  });
+
+  // Start server
+  app.listen(port, () => {
+    console.log(`🚀 Indexar service started`);
+    console.log(`🚀 Express server ready at http://localhost:${port}`);
+    console.log(
+      `🚀 API Documentation available at http://localhost:${port}/api-docs`
+    );
+    console.log(
+      `🚀 Health check available at http://localhost:${port}/api/health`
+    );
+    console.log(`🔧 DEBUG MODE: Indexer disabled for testing`);
+  });
 }
 
 main().catch((error) => {

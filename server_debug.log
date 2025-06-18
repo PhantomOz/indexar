@@ -1,0 +1,35 @@
+Successfully connected to PostgreSQL
+Added 2 contracts
+🚀 Indexar service started
+🚀 Express server ready at http://localhost:4000
+🚀 API Documentation available at http://localhost:4000/api-docs
+🚀 Health check available at http://localhost:4000/api/health
+🔧 DEBUG MODE: Indexer disabled for testing
+Contract LendBitV1 already exists in database
+Contract LendBit already exists in database
+Database initialized successfully
+Health endpoint called
+Sending response: {
+  status: "ok",
+  message: "Indexar service is running",
+}
+Contracts endpoint called
+Found 2 contracts
+Contracts endpoint called
+Found 2 contracts
+Health endpoint called
+Sending response: {
+  status: "ok",
+  message: "Indexar service is running",
+}
+Contracts endpoint called
+Found 2 contracts
+Stats endpoint called
+Stats retrieved: {
+  totalEvents: 0,
+  totalTransactions: 1262,
+  totalBlocks: 119,
+  monitoredContracts: 2,
+  latestBlock: 27207542,
+  isRunning: false,
+}
