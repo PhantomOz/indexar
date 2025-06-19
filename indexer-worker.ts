@@ -10,10 +10,8 @@ async function main() {
   const config_hub = {
     provider: new ethers.JsonRpcProvider(process.env.RPC_URL),
     dbPath: "./indexar.db",
-    batchSize: 50,
-    startBlock: await new ethers.JsonRpcProvider(
-      process.env.RPC_URL
-    ).getBlockNumber(),
+    batchSize: 12,
+    startBlock: 27290923,
   };
 
   const indexarManager = new IndexarManager();

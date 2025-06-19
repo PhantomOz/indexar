@@ -6,10 +6,19 @@ import type { Context } from "./src/api/types";
 import { createRoutes } from "./src/api/routes";
 import { specs } from "./src/api/swagger";
 import dotenv from "dotenv";
+import { connectMongo } from "./src/config/mongodb";
 
 dotenv.config();
 
 async function main() {
+  // Ensure MongoDB is connected before anything else
+  try {
+    await connectMongo();
+  } catch (err) {
+    console.error("Failed to connect to MongoDB:", err);
+    process.exit(1);
+  }
+
   // Initialize Express app
   const app = express();
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
