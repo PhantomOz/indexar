@@ -1,6 +1,10 @@
 import { EventEmitter } from "events";
 import { ethers } from "ethers";
-import pool from "../config/database";
+import Block from "../models/Block";
+import Contract from "../models/Contract";
+import Event from "../models/Event";
+import Transaction from "../models/Transaction";
+import { connectMongo } from "../config/mongodb";
 
 class Indexar extends EventEmitter {
   provider: ethers.JsonRpcProvider;
@@ -14,7 +18,7 @@ class Indexar extends EventEmitter {
 
   constructor(config: {
     provider: ethers.JsonRpcProvider;
-    dbPath: string; // Keeping for backward compatibility, not used with PostgreSQL
+    dbPath: string; // Not used with MongoDB
     batchSize: number;
     startBlock: number;
   }) {
@@ -24,83 +28,7 @@ class Indexar extends EventEmitter {
     this.batchSize = config.batchSize;
     this.lastProcessedBlock = config.startBlock;
     this.isRunning = false;
-
-    this.initializeDb();
-  }
-
-  async initializeDb() {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      const tables = [
-        `CREATE TABLE IF NOT EXISTS blocks (
-          number INTEGER PRIMARY KEY,
-          hash TEXT UNIQUE,
-          timestamp INTEGER,
-          processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`,
-        `CREATE TABLE IF NOT EXISTS contracts (
-          address TEXT PRIMARY KEY,
-          name TEXT,
-          abi JSONB,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`,
-        `CREATE TABLE IF NOT EXISTS events (
-          id SERIAL PRIMARY KEY,
-          contract_address TEXT,
-          event_name TEXT,
-          block_number INTEGER,
-          transaction_hash TEXT,
-          log_index INTEGER,
-          args JSONB,
-          timestamp INTEGER,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (contract_address) REFERENCES contracts (address)
-        )`,
-        `CREATE TABLE IF NOT EXISTS transactions (
-          hash TEXT PRIMARY KEY,
-          block_number INTEGER,
-          from_address TEXT,
-          to_address TEXT,
-          value TEXT,
-          gas_used INTEGER,
-          gas_price TEXT,
-          timestamp INTEGER,
-          status INTEGER
-        )`,
-      ];
-
-      for (const sql of tables) {
-        await client.query(sql);
-      }
-
-      const indexes = [
-        "CREATE INDEX IF NOT EXISTS idx_events_contract ON events(contract_address)",
-        "CREATE INDEX IF NOT EXISTS idx_events_block ON events(block_number)",
-        "CREATE INDEX IF NOT EXISTS idx_events_name ON events(event_name)",
-        "CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_number)",
-        "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)",
-        "CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp)",
-        "CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address)",
-        "CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address)",
-        "CREATE INDEX IF NOT EXISTS idx_events_tx_hash ON events(transaction_hash)",
-        "CREATE INDEX IF NOT EXISTS idx_blocks_timestamp ON blocks(timestamp)",
-      ];
-
-      for (const sql of indexes) {
-        await client.query(sql);
-      }
-
-      await client.query("COMMIT");
-      console.log("Database initialized successfully");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error("Database initialization error:", err);
-      throw err;
-    } finally {
-      client.release();
-    }
+    connectMongo();
   }
 
   async addContract(address: string, name: string, abi: ethers.InterfaceAbi) {
@@ -111,61 +39,35 @@ class Indexar extends EventEmitter {
         abi,
         contract,
       });
-
-      const client = await pool.connect();
-      try {
-        // Check if contract already exists
-        const result = await client.query(
-          "SELECT address FROM contracts WHERE address = $1",
-          [address]
-        );
-
-        if (result.rows.length > 0) {
-          console.log(`Contract ${name} already exists in database`);
-          return;
-        }
-
-        // Insert new contract
-        await client.query(
-          "INSERT INTO contracts (address, name, abi) VALUES ($1, $2, $3) ON CONFLICT (address) DO NOTHING",
-          [address, name, JSON.stringify(abi)]
-        );
-        console.log(`Contract ${name} added successfully`);
-      } finally {
-        client.release();
-      }
+      await Contract.updateOne(
+        { address },
+        { $setOnInsert: { name, abi } },
+        { upsert: true }
+      );
+      console.log(`Contract ${name} added successfully`);
     } catch (error) {
-      console.error("Error adding contract:", error);
+      if ((error as any).code === 11000) {
+        console.log(`Contract ${name} already exists in database`);
+      } else {
+        console.error("Error adding contract:", error);
+      }
     }
   }
 
   async removeContract(address: string) {
     try {
-      // Remove from in-memory contracts map
       const contractInfo = this.contracts.get(address);
       if (!contractInfo) {
         console.log(`Contract ${address} not found in memory`);
         return;
       }
-
       this.contracts.delete(address);
       console.log(`Contract ${contractInfo.name} removed from memory`);
-
-      // Remove from database
-      const client = await pool.connect();
-      try {
-        const result = await client.query(
-          "DELETE FROM contracts WHERE address = $1 RETURNING name",
-          [address]
-        );
-
-        if (result.rows.length > 0) {
-          console.log(`Contract ${result.rows[0].name} removed from database`);
-        } else {
-          console.log(`Contract ${address} not found in database`);
-        }
-      } finally {
-        client.release();
+      const result = await Contract.deleteOne({ address });
+      if (result.deletedCount > 0) {
+        console.log(`Contract ${contractInfo.name} removed from database`);
+      } else {
+        console.log(`Contract ${address} not found in database`);
       }
     } catch (error) {
       console.error("Error removing contract:", error);
@@ -177,29 +79,23 @@ class Indexar extends EventEmitter {
       console.log("Indexar is already running");
       return;
     }
-
     this.isRunning = true;
     console.log("Indexar starting...");
-
     try {
       const currentBlock = await this.provider.getBlockNumber();
       console.log(`Current block: ${currentBlock}`);
       console.log(`last processed block: ${this.lastProcessedBlock}`);
-
       if (this.lastProcessedBlock < currentBlock) {
-        // process blocks
         await this.processHistoricalBlocks(
           this.lastProcessedBlock,
           currentBlock
         );
       }
-
       this.provider.on("block", async (blockNumber) => {
         if (this.isRunning) {
           await this.processBlock(blockNumber);
         }
       });
-
       this.emit("started");
     } catch (error) {
       console.error("Error starting Indexar:", error);
@@ -216,7 +112,6 @@ class Indexar extends EventEmitter {
 
   async processHistoricalBlocks(fromBlock: number, toBlock: number) {
     console.log(`Processing blocks from ${fromBlock} to ${toBlock}`);
-
     for (
       let blockNumber = fromBlock;
       blockNumber <= toBlock;
@@ -226,163 +121,100 @@ class Indexar extends EventEmitter {
         console.log("Indexar is not running, stopping processing");
         break;
       }
-
       const end = Math.min(blockNumber + this.batchSize - 1, toBlock);
       console.log(`Processing blocks ${blockNumber} to ${end}`);
-
       try {
-        const client = await pool.connect();
-        try {
-          await client.query("BEGIN");
-
-          // Process blocks sequentially but batch the database operations
-          const blockValues = [];
-          const transactionValues = [];
-          const eventValues = [];
-
-          for (
-            let currentBlock = blockNumber;
-            currentBlock <= end;
-            currentBlock++
-          ) {
-            if (!this.isRunning) break;
-
-            const block = await this.provider.getBlock(currentBlock);
-            if (!block) {
-              console.log(`Block ${currentBlock} not found, skipping`);
-              continue;
+        const blockValues = [];
+        const transactionValues = [];
+        const eventValues = [];
+        for (
+          let currentBlock = blockNumber;
+          currentBlock <= end;
+          currentBlock++
+        ) {
+          if (!this.isRunning) break;
+          const block = await this.provider.getBlock(currentBlock);
+          if (!block) {
+            console.log(`Block ${currentBlock} not found, skipping`);
+            continue;
+          }
+          blockValues.push({
+            number: block.number,
+            hash: block.hash,
+            timestamp: block.timestamp,
+          });
+          for (const tx of block.transactions) {
+            const txResponse = await this.provider.getTransaction(tx);
+            const txReceipt = await this.provider.getTransactionReceipt(tx);
+            if (txResponse && txReceipt) {
+              transactionValues.push({
+                hash: tx,
+                block_number: txResponse.blockNumber,
+                from_address: txResponse.from,
+                to_address: txResponse.to,
+                value: txResponse.value.toString(),
+                gas_used: txReceipt.gasUsed,
+                gas_price: txReceipt.gasPrice.toString(),
+                timestamp: block.timestamp,
+                status: txReceipt.status,
+              });
             }
-
-            // Collect block data
-            blockValues.push([block.number, block.hash, block.timestamp]);
-
-            // Process transactions
-            for (const tx of block.transactions) {
-              const txResponse = await this.provider.getTransaction(tx);
-              const txReceipt = await this.provider.getTransactionReceipt(tx);
-
-              if (txResponse && txReceipt) {
-                transactionValues.push([
-                  tx,
-                  txResponse.blockNumber,
-                  txResponse.from,
-                  txResponse.to,
-                  txResponse.value.toString(),
-                  txReceipt.gasUsed,
-                  txReceipt.gasPrice.toString(),
-                  block.timestamp,
-                  txReceipt.status,
-                ]);
-              }
-
-              // Process events for each transaction
-              for (const [address, contractInfo] of this.contracts) {
-                const filter = {
-                  address: address,
-                  fromBlock: currentBlock,
-                  toBlock: currentBlock,
-                };
-
-                const logs = await this.provider.getLogs(filter);
-                for (const log of logs) {
-                  const parsedLog =
-                    contractInfo.contract.interface.parseLog(log);
-                  if (parsedLog) {
-                    const args: Record<string, any> = {};
-                    parsedLog.args.forEach((arg, index) => {
-                      const param = parsedLog.fragment.inputs[index];
-                      args[param?.name ?? `arg${index}`] =
-                        this.serializeValue(arg);
-                    });
-
-                    eventValues.push([
-                      log.address.toLowerCase(),
-                      parsedLog.name,
-                      log.blockNumber,
-                      log.transactionHash,
-                      log.index,
-                      JSON.stringify(args),
-                      block.timestamp,
-                    ]);
-                  }
+            for (const [address, contractInfo] of this.contracts) {
+              const filter = {
+                address: address,
+                fromBlock: currentBlock,
+                toBlock: currentBlock,
+              };
+              const logs = await this.provider.getLogs(filter);
+              for (const log of logs) {
+                const parsedLog = contractInfo.contract.interface.parseLog(log);
+                if (parsedLog) {
+                  const args: Record<string, any> = {};
+                  parsedLog.args.forEach((arg, index) => {
+                    const param = parsedLog.fragment.inputs[index];
+                    args[param?.name ?? `arg${index}`] =
+                      this.serializeValue(arg);
+                  });
+                  eventValues.push({
+                    contract_address: log.address.toLowerCase(),
+                    event_name: parsedLog.name,
+                    block_number: log.blockNumber,
+                    transaction_hash: log.transactionHash,
+                    log_index: log.index,
+                    args,
+                    timestamp: block.timestamp,
+                  });
                 }
               }
             }
-
-            // Add a small delay between blocks to avoid rate limits
-            await new Promise((resolve) => setTimeout(resolve, 100));
           }
-
-          // Batch insert blocks
-          if (blockValues.length > 0) {
-            const blockQuery = `
-              INSERT INTO blocks (number, hash, timestamp)
-              VALUES ${blockValues
-                .map((_, i) => `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`)
-                .join(", ")}
-              ON CONFLICT (number) DO NOTHING
-            `;
-            await client.query(blockQuery, blockValues.flat());
-          }
-
-          // Batch insert transactions
-          if (transactionValues.length > 0) {
-            const txQuery = `
-              INSERT INTO transactions 
-              (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status)
-              VALUES ${transactionValues
-                .map(
-                  (_, i) =>
-                    `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}, $${
-                      i * 9 + 4
-                    }, $${i * 9 + 5}, $${i * 9 + 6}, $${i * 9 + 7}, $${
-                      i * 9 + 8
-                    }, $${i * 9 + 9})`
-                )
-                .join(", ")}
-              ON CONFLICT (hash) DO NOTHING
-            `;
-            await client.query(txQuery, transactionValues.flat());
-          }
-
-          // Batch insert events
-          if (eventValues.length > 0) {
-            const eventQuery = `
-              INSERT INTO events 
-              (contract_address, event_name, block_number, transaction_hash, log_index, args, timestamp)
-              VALUES ${eventValues
-                .map(
-                  (_, i) =>
-                    `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${
-                      i * 7 + 4
-                    }, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`
-                )
-                .join(", ")}
-              ON CONFLICT (contract_address, transaction_hash, log_index) DO NOTHING
-            `;
-            await client.query(eventQuery, eventValues.flat());
-          }
-
-          await client.query("COMMIT");
-          this.lastProcessedBlock = end;
-
-          this.emit("progress", {
-            processed: end,
-            total: toBlock,
-            percentage: ((end - fromBlock) / (toBlock - fromBlock)) * 100,
-          });
-        } catch (error) {
-          await client.query("ROLLBACK");
-          throw error;
-        } finally {
-          client.release();
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
-
-        // Increase delay between batches to avoid rate limits
+        if (blockValues.length > 0) {
+          await Block.insertMany(blockValues, { ordered: false }).catch(
+            () => {}
+          );
+        }
+        if (transactionValues.length > 0) {
+          console.log("Transactions Length >>", transactionValues.length);
+          await Transaction.insertMany(transactionValues, {
+            ordered: false,
+          }).catch(() => {});
+        }
+        if (eventValues.length > 0) {
+          await Event.insertMany(eventValues, { ordered: false }).catch(
+            () => {}
+          );
+        }
+        this.lastProcessedBlock = end;
+        this.emit("progress", {
+          processed: end,
+          total: toBlock,
+          percentage: ((end - fromBlock) / (toBlock - fromBlock)) * 100,
+        });
         await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (error) {
         console.error("Error processing blocks:", error);
-        // Add exponential backoff on error
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
@@ -391,7 +223,6 @@ class Indexar extends EventEmitter {
   async processBlock(blockNumber: number, isRealTime: boolean = true) {
     console.log(`Processing block ${blockNumber}`);
     let retries = 3;
-
     while (retries > 0) {
       try {
         const block = await this.provider.getBlock(blockNumber);
@@ -399,37 +230,24 @@ class Indexar extends EventEmitter {
           console.log(`Block ${blockNumber} not found, skipping`);
           return;
         }
-
-        const client = await pool.connect();
-        try {
-          await client.query(
-            "INSERT INTO blocks (number, hash, timestamp) VALUES ($1, $2, $3) ON CONFLICT (number) DO NOTHING",
-            [block.number, block.hash, block.timestamp]
-          );
-
-          // Process transactions sequentially
-          for (const tx of block.transactions) {
-            if (!this.isRunning) break;
-            await this.processTransaction(tx, block.timestamp);
-            // Add a small delay between transactions
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          }
-
-          // Process events
-          await this.processBlockEvents(blockNumber);
-
-          if (isRealTime) {
-            this.lastProcessedBlock = blockNumber;
-            this.emit("blockProcessed", {
-              blockNumber,
-              timestamp: block.timestamp,
-            });
-          }
-        } finally {
-          client.release();
+        await Block.updateOne(
+          { number: block.number },
+          { $setOnInsert: { hash: block.hash, timestamp: block.timestamp } },
+          { upsert: true }
+        );
+        for (const tx of block.transactions) {
+          if (!this.isRunning) break;
+          await this.processTransaction(tx, block.timestamp);
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
-
-        // Success, break the retry loop
+        await this.processBlockEvents(blockNumber);
+        if (isRealTime) {
+          this.lastProcessedBlock = blockNumber;
+          this.emit("blockProcessed", {
+            blockNumber,
+            timestamp: block.timestamp,
+          });
+        }
         break;
       } catch (error: any) {
         retries--;
@@ -451,36 +269,28 @@ class Indexar extends EventEmitter {
     try {
       const txResponse = await this.provider.getTransaction(tx);
       const txReceipt = await this.provider.getTransactionReceipt(tx);
-
       if (!txResponse || !txReceipt) {
         console.warn(
           `Transaction ${tx} not found or receipt missing, skipping`
         );
         return;
       }
-
-      const client = await pool.connect();
-      try {
-        await client.query(
-          `INSERT INTO transactions 
-           (hash, block_number, from_address, to_address, value, gas_used, gas_price, timestamp, status) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (hash) DO NOTHING`,
-          [
-            tx,
-            txResponse.blockNumber,
-            txResponse.from,
-            txResponse.to,
-            txResponse.value.toString(),
-            txReceipt.gasUsed,
-            txReceipt.gasPrice.toString(),
+      await Transaction.updateOne(
+        { hash: tx },
+        {
+          $setOnInsert: {
+            block_number: txResponse.blockNumber,
+            from_address: txResponse.from,
+            to_address: txResponse.to,
+            value: txResponse.value.toString(),
+            gas_used: txReceipt.gasUsed,
+            gas_price: txReceipt.gasPrice.toString(),
             timestamp,
-            txReceipt.status,
-          ]
-        );
-      } finally {
-        client.release();
-      }
+            status: txReceipt.status,
+          },
+        },
+        { upsert: true }
+      );
     } catch (error) {
       console.warn("Error processing transaction:", error);
     }
@@ -494,9 +304,7 @@ class Indexar extends EventEmitter {
           fromBlock: blockNumber,
           toBlock: blockNumber,
         };
-
         const logs = await this.provider.getLogs(filter);
-
         for (const log of logs) {
           await this.processEvent(log, contractInfo);
         }
@@ -519,44 +327,36 @@ class Indexar extends EventEmitter {
   ) {
     try {
       const parsedLog = contractInfo.contract.interface.parseLog(log);
-      console.log("Is it Parsing Logs");
       if (!parsedLog) return;
-
       const args: Record<string, any> = {};
       parsedLog.args.forEach((arg, index) => {
         const param = parsedLog.fragment.inputs[index];
         args[param?.name ?? `arg${index}`] = this.serializeValue(arg);
       });
-
       const block = await this.provider.getBlock(log.blockNumber);
-      const client = await pool.connect();
-      try {
-        await client.query(
-          `INSERT INTO events 
-           (contract_address, event_name, block_number, transaction_hash, log_index, args, timestamp)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (contract_address, transaction_hash, log_index) DO NOTHING`,
-          [
-            log.address.toLowerCase(),
-            parsedLog.name,
-            log.blockNumber,
-            log.transactionHash,
-            log.index,
-            JSON.stringify(args),
-            block?.timestamp,
-          ]
-        );
-
-        this.emit("eventIndexed", {
-          contract: log.address,
-          event: parsedLog.name,
-          args,
-          blockNumber: log.blockNumber,
-          transactionHash: log.transactionHash,
-        });
-      } finally {
-        client.release();
-      }
+      await Event.updateOne(
+        {
+          contract_address: log.address.toLowerCase(),
+          transaction_hash: log.transactionHash,
+          log_index: log.index,
+        },
+        {
+          $setOnInsert: {
+            event_name: parsedLog.name,
+            block_number: log.blockNumber,
+            args,
+            timestamp: block?.timestamp,
+          },
+        },
+        { upsert: true }
+      );
+      this.emit("eventIndexed", {
+        contract: log.address,
+        event: parsedLog.name,
+        args,
+        blockNumber: log.blockNumber,
+        transactionHash: log.transactionHash,
+      });
     } catch (error) {
       console.error("Error processing event:", error);
     }
@@ -564,10 +364,8 @@ class Indexar extends EventEmitter {
 
   close() {
     this.stop();
-    // No need to close the pool as it's managed by the application
   }
 
-  // Helper method to serialize values for JSON storage
   private serializeValue(value: any): any {
     if (value === null || value === undefined) return null;
     if (typeof value === "bigint") return value.toString();
@@ -582,6 +380,16 @@ class Indexar extends EventEmitter {
       return obj;
     }
     return value;
+  }
+
+  async clearDatabase() {
+    await Event.deleteMany({});
+    await Transaction.deleteMany({});
+    await Block.deleteMany({});
+    await Contract.deleteMany({});
+    this.contracts.clear();
+    this.lastProcessedBlock = 0;
+    console.log("Database cleared successfully");
   }
 }
 
