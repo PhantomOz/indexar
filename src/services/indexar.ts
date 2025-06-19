@@ -519,6 +519,7 @@ class Indexar extends EventEmitter {
   ) {
     try {
       const parsedLog = contractInfo.contract.interface.parseLog(log);
+      console.log("Is it Parsing Logs");
       if (!parsedLog) return;
 
       const args: Record<string, any> = {};
