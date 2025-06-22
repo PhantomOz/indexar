@@ -15,12 +15,26 @@ class Indexar extends EventEmitter {
   lastProcessedBlock: number;
   batchSize: number;
   public isRunning: boolean;
+  private rateLimits: {
+    transactionDelay: number;
+    eventDelay: number;
+    contractDelay: number;
+    blockDelay: number;
+    maxRetries: number;
+  };
 
   constructor(config: {
     provider: ethers.JsonRpcProvider;
     dbPath: string; // Not used with MongoDB
     batchSize: number;
     startBlock: number;
+    rateLimits?: {
+      transactionDelay?: number;
+      eventDelay?: number;
+      contractDelay?: number;
+      blockDelay?: number;
+      maxRetries?: number;
+    };
   }) {
     super();
     this.provider = config.provider;
@@ -28,6 +42,13 @@ class Indexar extends EventEmitter {
     this.batchSize = config.batchSize;
     this.lastProcessedBlock = config.startBlock;
     this.isRunning = false;
+    this.rateLimits = {
+      transactionDelay: config.rateLimits?.transactionDelay ?? 200,
+      eventDelay: config.rateLimits?.eventDelay ?? 100,
+      contractDelay: config.rateLimits?.contractDelay ?? 150,
+      blockDelay: config.rateLimits?.blockDelay ?? 50,
+      maxRetries: config.rateLimits?.maxRetries ?? 3,
+    };
     connectMongo();
   }
 
@@ -153,7 +174,7 @@ class Indexar extends EventEmitter {
                 from_address: txResponse.from,
                 to_address: txResponse.to,
                 value: txResponse.value.toString(),
-                gas_used: txReceipt.gasUsed,
+                gas_used: txReceipt.gasUsed.toString(),
                 gas_price: txReceipt.gasPrice.toString(),
                 timestamp: block.timestamp,
                 status: txReceipt.status,
@@ -221,8 +242,10 @@ class Indexar extends EventEmitter {
   }
 
   async processBlock(blockNumber: number, isRealTime: boolean = true) {
-    console.log(`Processing block ${blockNumber}`);
-    let retries = 3;
+    console.log(
+      `Processing block ${blockNumber} while real block number is ${await this.provider.getBlockNumber()} `
+    );
+    let retries = this.rateLimits.maxRetries;
     while (retries > 0) {
       try {
         const block = await this.provider.getBlock(blockNumber);
@@ -235,11 +258,13 @@ class Indexar extends EventEmitter {
           { $setOnInsert: { hash: block.hash, timestamp: block.timestamp } },
           { upsert: true }
         );
-        for (const tx of block.transactions) {
-          if (!this.isRunning) break;
-          await this.processTransaction(tx, block.timestamp);
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+        // for (const tx of block.transactions) {
+        //   if (!this.isRunning) break;
+        //   await this.processTransaction(tx, block.timestamp);
+        //   await new Promise((resolve) =>
+        //     setTimeout(resolve, this.rateLimits.transactionDelay)
+        //   );
+        // }
         await this.processBlockEvents(blockNumber);
         if (isRealTime) {
           this.lastProcessedBlock = blockNumber;
@@ -252,10 +277,16 @@ class Indexar extends EventEmitter {
       } catch (error: any) {
         retries--;
         if (error?.code === 429 || error?.message?.includes("rate limit")) {
-          console.log(
-            `Rate limit hit, retrying in 5 seconds... (${retries} retries left)`
+          const delay = Math.min(
+            5000 * Math.pow(2, this.rateLimits.maxRetries - retries),
+            30000
           );
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          console.log(
+            `Rate limit hit, retrying in ${
+              delay / 1000
+            } seconds... (${retries} retries left)`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           console.error("Error processing block:", error);
           if (retries === 0) throw error;
@@ -266,33 +297,56 @@ class Indexar extends EventEmitter {
   }
 
   async processTransaction(tx: string, timestamp: number) {
-    try {
-      const txResponse = await this.provider.getTransaction(tx);
-      const txReceipt = await this.provider.getTransactionReceipt(tx);
-      if (!txResponse || !txReceipt) {
-        console.warn(
-          `Transaction ${tx} not found or receipt missing, skipping`
+    let retries = this.rateLimits.maxRetries;
+    while (retries > 0) {
+      try {
+        const txResponse = await this.provider.getTransaction(tx);
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.rateLimits.eventDelay)
         );
-        return;
-      }
-      await Transaction.updateOne(
-        { hash: tx },
-        {
-          $setOnInsert: {
-            block_number: txResponse.blockNumber,
-            from_address: txResponse.from,
-            to_address: txResponse.to,
-            value: txResponse.value.toString(),
-            gas_used: txReceipt.gasUsed,
-            gas_price: txReceipt.gasPrice.toString(),
-            timestamp,
-            status: txReceipt.status,
+        const txReceipt = await this.provider.getTransactionReceipt(tx);
+        if (!txResponse || !txReceipt) {
+          console.warn(
+            `Transaction ${tx} not found or receipt missing, skipping`
+          );
+          return;
+        }
+        await Transaction.updateOne(
+          { hash: tx },
+          {
+            $setOnInsert: {
+              block_number: txResponse.blockNumber,
+              from_address: txResponse.from,
+              to_address: txResponse.to,
+              value: txResponse.value.toString(),
+              gas_used: txReceipt.gasUsed.toString(),
+              gas_price: txReceipt.gasPrice.toString(),
+              timestamp,
+              status: txReceipt.status,
+            },
           },
-        },
-        { upsert: true }
-      );
-    } catch (error) {
-      console.warn("Error processing transaction:", error);
+          { upsert: true }
+        );
+        break;
+      } catch (error: any) {
+        retries--;
+        if (error?.code === 429 || error?.message?.includes("rate limit")) {
+          const delay = Math.min(
+            2000 * Math.pow(2, this.rateLimits.maxRetries - retries),
+            15000
+          );
+          console.log(
+            `Rate limit hit in processTransaction, retrying in ${
+              delay / 1000
+            } seconds... (${retries} retries left)`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          console.warn("Error processing transaction:", error);
+          if (retries === 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
     }
   }
 
@@ -305,14 +359,24 @@ class Indexar extends EventEmitter {
           toBlock: blockNumber,
         };
         const logs = await this.provider.getLogs(filter);
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.rateLimits.contractDelay)
+        );
         for (const log of logs) {
           await this.processEvent(log, contractInfo);
         }
-      } catch (error) {
-        console.error(
-          `Error processing events for contract ${address}:`,
-          error
-        );
+      } catch (error: any) {
+        if (error?.code === 429 || error?.message?.includes("rate limit")) {
+          console.log(
+            `Rate limit hit in processBlockEvents for contract ${address}, waiting 5 seconds...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } else {
+          console.error(
+            `Error processing events for contract ${address}:`,
+            error
+          );
+        }
       }
     }
   }
@@ -325,40 +389,61 @@ class Indexar extends EventEmitter {
       contract: ethers.Contract;
     }
   ) {
-    try {
-      const parsedLog = contractInfo.contract.interface.parseLog(log);
-      if (!parsedLog) return;
-      const args: Record<string, any> = {};
-      parsedLog.args.forEach((arg, index) => {
-        const param = parsedLog.fragment.inputs[index];
-        args[param?.name ?? `arg${index}`] = this.serializeValue(arg);
-      });
-      const block = await this.provider.getBlock(log.blockNumber);
-      await Event.updateOne(
-        {
-          contract_address: log.address.toLowerCase(),
-          transaction_hash: log.transactionHash,
-          log_index: log.index,
-        },
-        {
-          $setOnInsert: {
-            event_name: parsedLog.name,
-            block_number: log.blockNumber,
-            args,
-            timestamp: block?.timestamp,
+    let retries = Math.min(this.rateLimits.maxRetries, 2); // Cap at 2 for events
+    while (retries > 0) {
+      try {
+        const parsedLog = contractInfo.contract.interface.parseLog(log);
+        if (!parsedLog) return;
+        const args: Record<string, any> = {};
+        parsedLog.args.forEach((arg, index) => {
+          const param = parsedLog.fragment.inputs[index];
+          args[param?.name ?? `arg${index}`] = this.serializeValue(arg);
+        });
+        const block = await this.provider.getBlock(log.blockNumber);
+        await Event.updateOne(
+          {
+            contract_address: log.address.toLowerCase(),
+            transaction_hash: log.transactionHash,
+            log_index: log.index,
           },
-        },
-        { upsert: true }
-      );
-      this.emit("eventIndexed", {
-        contract: log.address,
-        event: parsedLog.name,
-        args,
-        blockNumber: log.blockNumber,
-        transactionHash: log.transactionHash,
-      });
-    } catch (error) {
-      console.error("Error processing event:", error);
+          {
+            $setOnInsert: {
+              event_name: parsedLog.name,
+              block_number: log.blockNumber,
+              args,
+              timestamp: block?.timestamp,
+            },
+          },
+          { upsert: true }
+        );
+        this.emit("eventIndexed", {
+          contract: log.address,
+          event: parsedLog.name,
+          args,
+          blockNumber: log.blockNumber,
+          transactionHash: log.transactionHash,
+        });
+        break;
+      } catch (error: any) {
+        retries--;
+        if (error?.code === 429 || error?.message?.includes("rate limit")) {
+          const delay = Math.min(
+            1000 *
+              Math.pow(2, Math.min(this.rateLimits.maxRetries, 2) - retries),
+            10000
+          );
+          console.log(
+            `Rate limit hit in processEvent, retrying in ${
+              delay / 1000
+            } seconds... (${retries} retries left)`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          console.error("Error processing event:", error);
+          if (retries === 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
     }
   }
 

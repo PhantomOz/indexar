@@ -11,7 +11,9 @@ async function main() {
     provider: new ethers.JsonRpcProvider(process.env.RPC_URL),
     dbPath: "./indexar.db",
     batchSize: 12,
-    startBlock: 27290923,
+    startBlock: await new ethers.JsonRpcProvider(
+      process.env.RPC_URL
+    ).getBlockNumber(),
   };
 
   const indexarManager = new IndexarManager();

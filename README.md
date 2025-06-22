@@ -1,70 +1,187 @@
-# Indexar
+# Indexar - Blockchain Event Indexer
 
-A blockchain indexing service that uses PostgreSQL for data storage.
-
-## Prerequisites
-
-- [Bun](https://bun.sh/) - JavaScript runtime and package manager
-- [PostgreSQL](https://www.postgresql.org/) - Database server
-- Node.js (for development)
-
-## Setup
-
-1. Install dependencies:
-```bash
-bun install
-```
-
-2. Set up PostgreSQL:
-   - Install PostgreSQL if you haven't already
-   - Create a new database:
-     ```sql
-     CREATE DATABASE indexar;
-     ```
-   - Create a user (optional, you can use the default postgres user):
-     ```sql
-     CREATE USER indexar WITH PASSWORD 'your_password';
-     GRANT ALL PRIVILEGES ON DATABASE indexar TO indexar;
-     ```
-
-3. Configure environment variables:
-   - Copy `.env.example` to `.env`
-   - Update the following variables in `.env`:
-     - `RPC_URL`: Your Ethereum node RPC URL
-     - `POSTGRES_USER`: PostgreSQL username
-     - `POSTGRES_PASSWORD`: PostgreSQL password
-     - `POSTGRES_DB`: Database name (default: indexar)
-     - `POSTGRES_HOST`: Database host (default: localhost)
-     - `POSTGRES_PORT`: Database port (default: 5432)
-
-4. Start the service:
-```bash
-bun start
-```
-
-5. Start the API server:
-```bash
-bun api
-```
+A real-time blockchain event indexer built with Node.js, Ethers.js, and MongoDB.
 
 ## Features
 
-- Indexes Ethereum blockchain data
-- Stores blocks, transactions, and events
-- GraphQL API for querying indexed data
-- Real-time event monitoring
-- PostgreSQL for robust data storage
+- Real-time blockchain event indexing
+- Support for multiple smart contracts
+- MongoDB storage with upsert operations
+- Configurable rate limiting to prevent API throttling
+- Event-driven architecture with progress tracking
 
-## API
+## Installation
 
-The service provides a GraphQL API at `http://localhost:4000`. You can use the GraphQL playground to explore the available queries and mutations.
+```bash
+npm install
+```
 
-## Development
+## Configuration
 
-- The project uses TypeScript for type safety
-- PostgreSQL is used for data persistence
-- Bun is used as the package manager and runtime
-- Apollo Server is used for the GraphQL API
+### Rate Limiting
+
+The indexer includes configurable rate limiting to prevent hitting API rate limits (especially important for Alchemy and other RPC providers):
+
+```typescript
+const indexar = new Indexar({
+  provider: new ethers.JsonRpcProvider(ALCHEMY_URL),
+  dbPath: "mongodb://localhost:27017/indexar",
+  batchSize: 10,
+  startBlock: 18000000,
+  rateLimits: {
+    transactionDelay: 200,    // Delay between processing transactions (ms)
+    eventDelay: 100,          // Delay between API calls in transaction processing (ms)
+    contractDelay: 150,       // Delay between contract event processing (ms)
+    blockDelay: 50,           // Delay between block processing (ms)
+    maxRetries: 3,            // Maximum retry attempts for rate limit errors
+  }
+});
+```
+
+### Recommended Rate Limits for Different Providers
+
+**Alchemy (Free Tier):**
+```typescript
+rateLimits: {
+  transactionDelay: 300,    // More conservative for free tier
+  eventDelay: 150,
+  contractDelay: 200,
+  blockDelay: 100,
+  maxRetries: 3,
+}
+```
+
+**Alchemy (Paid Tier):**
+```typescript
+rateLimits: {
+  transactionDelay: 200,    // Can be more aggressive
+  eventDelay: 100,
+  contractDelay: 150,
+  blockDelay: 50,
+  maxRetries: 3,
+}
+```
+
+**Infura:**
+```typescript
+rateLimits: {
+  transactionDelay: 250,
+  eventDelay: 120,
+  contractDelay: 180,
+  blockDelay: 75,
+  maxRetries: 3,
+}
+```
+
+## Usage
+
+```typescript
+import Indexar from './src/services/indexar';
+import { ethers } from 'ethers';
+
+const provider = new ethers.JsonRpcProvider(process.env.ALCHEMY_URL);
+
+const indexar = new Indexar({
+  provider,
+  dbPath: "mongodb://localhost:27017/indexar",
+  batchSize: 10,
+  startBlock: 18000000,
+  rateLimits: {
+    transactionDelay: 200,
+    eventDelay: 100,
+    contractDelay: 150,
+    blockDelay: 50,
+    maxRetries: 3,
+  }
+});
+
+// Add contracts to monitor
+await indexar.addContract(
+  "0x...", // Contract address
+  "MyContract",
+  contractABI
+);
+
+// Start indexing
+await indexar.start();
+
+// Listen for events
+indexar.on("eventIndexed", (event) => {
+  console.log("Event indexed:", event);
+});
+
+indexar.on("blockProcessed", (block) => {
+  console.log("Block processed:", block);
+});
+```
+
+## Database Schema
+
+### Events Collection
+```javascript
+{
+  contract_address: String,
+  event_name: String,
+  block_number: Number,
+  transaction_hash: String,
+  log_index: Number,
+  args: Object,
+  timestamp: Number
+}
+```
+
+### Transactions Collection
+```javascript
+{
+  hash: String,
+  block_number: Number,
+  from_address: String,
+  to_address: String,
+  value: String,
+  gas_used: String,
+  gas_price: String,
+  timestamp: Number,
+  status: Number
+}
+```
+
+### Blocks Collection
+```javascript
+{
+  number: Number,
+  hash: String,
+  timestamp: Number
+}
+```
+
+## Error Handling
+
+The indexer includes robust error handling with exponential backoff for rate limit errors (HTTP 429). When rate limits are hit, the system will:
+
+1. Detect the 429 error
+2. Wait with exponential backoff (2^retry * base_delay)
+3. Retry the operation up to `maxRetries` times
+4. Log detailed information about retry attempts
+
+## Troubleshooting
+
+### Rate Limit Errors (429)
+
+If you're still getting rate limit errors despite the built-in rate limiting:
+
+1. **Increase delays**: Try increasing the delay values in the rateLimits configuration
+2. **Reduce batch size**: Lower the `batchSize` to process fewer blocks at once
+3. **Upgrade your RPC provider**: Consider upgrading to a paid tier with higher rate limits
+4. **Monitor logs**: Check the console output for retry attempts and adjust accordingly
+
+### Performance Optimization
+
+For better performance with high-volume contracts:
+
+1. **Use appropriate delays**: Balance between speed and rate limits
+2. **Monitor memory usage**: Large numbers of contracts can consume significant memory
+3. **Database indexing**: Ensure proper indexes on frequently queried fields
+4. **Batch processing**: Use the batch processing for historical data instead of real-time for large ranges
 
 ## License
 
